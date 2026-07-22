@@ -1,7 +1,9 @@
 import { BrowserWindow, screen } from 'electron'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 let assistantWindow: BrowserWindow | null = null
+const mainDir = path.dirname(fileURLToPath(import.meta.url))
 const ASSISTANT_WIDTH = 560
 const ASSISTANT_HEIGHT = 460
 const COVER_WIDTH = 220
@@ -13,11 +15,34 @@ function getRendererUrlOrFile(hash?: string): { url?: string; file?: string } {
   if (devServerUrl) {
     return { url: hash ? `${devServerUrl}/#${hash}` : devServerUrl }
   }
-  return { file: path.join(__dirname, '../renderer/index.html') }
+  return { file: path.join(mainDir, '../renderer/index.html') }
 }
 
 function preloadPath(): string {
-  return path.join(__dirname, '../preload/index.js')
+  return path.join(mainDir, '../preload/index.js')
+}
+
+/**
+ * The renderer exposes IPC methods that can read captured context and write text back to the
+ * active application. Keep that API confined to the bundled renderer (or the configured Vite
+ * origin in development); an external navigation must never inherit this preload bridge.
+ */
+export function isTrustedAssistantNavigation(
+  targetUrl: string,
+  rendererUrl = process.env['ELECTRON_RENDERER_URL'],
+  bundledRendererPath = path.join(mainDir, '../renderer/index.html')
+): boolean {
+  try {
+    const target = new URL(targetUrl)
+    if (rendererUrl) {
+      const renderer = new URL(rendererUrl)
+      return target.origin === renderer.origin && target.pathname === renderer.pathname
+    }
+
+    return target.protocol === 'file:' && fileURLToPath(target) === bundledRendererPath
+  } catch {
+    return false
+  }
 }
 
 function currentWorkArea(): { x: number; y: number; width: number; height: number } {
@@ -57,6 +82,11 @@ export function createAssistantWindow(): BrowserWindow {
   } else if (target.file) {
     void assistantWindow.loadFile(target.file)
   }
+
+  assistantWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  assistantWindow.webContents.on('will-navigate', (event, url) => {
+    if (!isTrustedAssistantNavigation(url)) event.preventDefault()
+  })
 
   assistantWindow.on('closed', () => {
     assistantWindow = null

@@ -124,6 +124,11 @@ export const nativeImage = {
   createEmpty: () => ({ width: 0, height: 0 })
 }
 
+export const screen = {
+  getDisplayNearestPoint: () => ({ workArea: { x: 0, y: 0, width: 1440, height: 900 } }),
+  getCursorScreenPoint: () => ({ x: 0, y: 0 })
+}
+
 export const clipboard = {
   writeText: (text: string) => {
     electronMockState.clipboardText = text
